@@ -1,0 +1,11 @@
+# Ignore pnpm lockfiles
+pnpm-lock.yaml
+
+# Ignore Pulumi state and artifacts
+.pulumi/
+target/
+
+# Ignore Ansible/System artifacts
+*.retry
+.venv/
+node_modules/
