@@ -1,0 +1,16 @@
+config:
+  hcloud:token:
+    secure: AAABAEz2oyTMvwZeZ7uWIMvEWuHSjMzGnV+4MXHSf1h6hLKJRq2E4OXpHJXC10lQ3D20pUse3K/t3ggFwgfMZtEECXJ8XevY0juqeEGBO1Zle3VZaaR07HQQOC6hj51H
+  cloudflare:apiToken:
+    secure: AAABAKFLZmel3BEMIjUKYXv5q6qkb/uw9Y678AjfFgwdNJYTuKuNhDwVSkVW58mkhQtKpUgMgBIiJKTr9SqjQ5kUkoQLzsQX
+  homelab:cloudflareAccountId:
+    secure: AAABAMzdVJBjszVXlNA98PG18tHF/AhA0vcBzYkXm+/rqjfhj9jINNsjrGR68Id2mgawJAFEIr6DhcKXHCg8bQ==
+  homelab:cloudflareZoneId:
+    secure: AAABAIJPKjQTWjvHPW20aLwNt3tJlWCTFr9h4frUhI7zGcxXyvZjAHp2MF8F5uRrg5wrY/uCjw6Xah9j8jLSig==
+  homelab:domainName:
+    secure: AAABAKzzqIlx/gBGNbdaTviI5eKqmPgBQf0Da76K1sY3z8IlifeGAnU=
+  homelab:sshPublicKey: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID0N/o6+rlmbyEveDJ2EoBpGsLBBRvG2aQs4C20EtZWl mesh@arch
+  homelab:cloudflareZeroTrustOrgName:
+    secure: AAABAJdJA7onMablyNaam/Ci3u8ikYrwzjmeN152f05ctDFm
+  homelab:adminEmail:
+    secure: AAABAGKZMGPlD7USSzvVWji9Jm9ZaAU65DErOtUHVOJc4U/Smp1lamm8c54=
