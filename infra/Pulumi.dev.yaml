@@ -12,5 +12,3 @@ config:
   homelab:sshPublicKey: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID0N/o6+rlmbyEveDJ2EoBpGsLBBRvG2aQs4C20EtZWl mesh@arch
   homelab:cloudflareZeroTrustOrgName:
     secure: AAABAJdJA7onMablyNaam/Ci3u8ikYrwzjmeN152f05ctDFm
-  homelab:adminEmail:
-    secure: AAABAGKZMGPlD7USSzvVWji9Jm9ZaAU65DErOtUHVOJc4U/Smp1lamm8c54=
