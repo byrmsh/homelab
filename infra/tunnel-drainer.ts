@@ -8,34 +8,26 @@ interface CfTunnelDrainerInputs {
   apiToken: CfString
 }
 
-// The status of the tunnel. Valid values are:
-// - inactive (tunnel has never been run),
-// - degraded (tunnel is active and able to serve traffic but in an unhealthy state),
-// - healthy (tunnel is active and able to serve traffic), or
-// - down (tunnel can not serve traffic as it has no connections to the Cloudflare Edge).
-// SOURCE: https://developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/cloudflared/methods/list/
-const PossibleCfTunnelStatuses = ['inactive', 'degraded', 'healthy', 'down'] as const
-type CfTunnelStatus = (typeof PossibleCfTunnelStatuses)[number]
-
-const checkStatus = async (accountId: string, tunnelId: string, apiToken: string) => {
+// API DOCS: https://developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/cloudflared/methods/get/
+const getConnectionCount = async (accountId: string, tunnelId: string, apiToken: string) => {
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/cfd_tunnel/${tunnelId}`
   const headers = { Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json' }
   const response = await fetch(url, { method: 'GET', headers })
   if (!response.ok) throw new Error(`API Error ${response.status}: ${response.statusText}`)
   const data = await response.json()
-  const status = data.result?.status
-  if (!status) throw new Error('Unexpected API response structure')
-  if (PossibleCfTunnelStatuses.includes(status)) return status as CfTunnelStatus
-  throw new Error('Unexpected API response value for tunnel status')
+  const connections = data.result?.connections
+  if (!Array.isArray(connections))
+    throw new Error('Unexpected API response structure: missing connections array')
+  return connections.length
 }
 
 const checkStatusUntilDrained = async (accountId: string, tunnelId: string, apiToken: string) => {
-  const status = await checkStatus(accountId, tunnelId, apiToken)
-  if (status === 'inactive' || status === 'down') {
-    console.log(`Tunnel status is '${status}'. Proceeding with destruction.`)
+  const count = await getConnectionCount(accountId, tunnelId, apiToken)
+  if (count === 0) {
+    console.log(`Tunnel has ${count} connections. Proceeding with destruction.`)
     return
   }
-  console.log(`Tunnel status is '${status}'. Waiting 2s...`)
+  console.log(`Tunnel has ${count} connections. Waiting 2s...`)
   await new Promise(r => setTimeout(r, 2000))
   return checkStatusUntilDrained(accountId, tunnelId, apiToken)
 }
