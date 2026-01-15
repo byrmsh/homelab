@@ -1,6 +1,7 @@
 import * as pulumi from '@pulumi/pulumi'
 import * as hcloud from '@pulumi/hcloud'
 import * as cloudflare from '@pulumi/cloudflare'
+import * as tls from '@pulumi/tls'
 import {
   cfZoneId,
   sshPublicKey,
@@ -8,8 +9,9 @@ import {
   CONTROL_PLANE_GROUP_NAME,
   CONTROL_PLANE_NODE_COUNT,
   WORKER_NODE_COUNT,
+  domainName,
 } from './config'
-import { infraTunnel, CF_TUNNEL_CLOUD_CONFIG } from './tunnel'
+import { infraTunnel, createCloudConfig } from './tunnel'
 import { generateServerName, enumerate } from './utils'
 
 const network = new hcloud.Network('k3s-net', {
@@ -50,7 +52,7 @@ const firewall = new hcloud.Firewall('k3s-firewall', {
   ],
 })
 
-export const wildcardCname = new cloudflare.DnsRecord('wildcard-cname', {
+const wildcardCname = new cloudflare.DnsRecord('wildcard-cname', {
   zoneId: cfZoneId,
   name: '*',
   type: 'CNAME',
@@ -59,7 +61,7 @@ export const wildcardCname = new cloudflare.DnsRecord('wildcard-cname', {
   ttl: 1,
 })
 
-export const rootCname = new cloudflare.DnsRecord('root-cname', {
+const rootCname = new cloudflare.DnsRecord('root-cname', {
   zoneId: cfZoneId,
   name: '@',
   type: 'CNAME',
@@ -87,41 +89,43 @@ const DEFAULT_SERVER_ARGS: hcloud.ServerArgs = {
   labels: { cluster: 'k3s-main' },
 }
 
-const createControlPlane = (i: number, overrides?: Partial<hcloud.ServerArgs>) => {
-  const name = generateServerName(CONTROL_PLANE_GROUP_NAME, i)
+const createNode = (
+  groupName: string,
+  i: number,
+  ipOffset: number,
+  role: 'control-plane' | 'worker',
+  overrides?: Partial<hcloud.ServerArgs>
+) => {
+  const name = generateServerName(groupName, i)
+  const hostname = pulumi.interpolate`${name}-ssh.${domainName}`
+  const sshHostKey = new tls.PrivateKey(`${name}-host-key`, { algorithm: 'ED25519' })
+  const knownHostEntry = pulumi.interpolate`${hostname} ${sshHostKey.publicKeyOpenssh}`
+
   const CUSTOM_SERVER_ARGS: Partial<hcloud.ServerArgs> = {
-    userData: CF_TUNNEL_CLOUD_CONFIG,
-    labels: { ...DEFAULT_SERVER_ARGS.labels, role: 'control-plane' },
+    userData: createCloudConfig(sshHostKey.privateKeyOpenssh, sshHostKey.publicKeyOpenssh),
+    labels: { ...DEFAULT_SERVER_ARGS.labels, role },
   }
   const args = { ...DEFAULT_SERVER_ARGS, ...CUSTOM_SERVER_ARGS, ...overrides }
-  const server = new hcloud.Server(name, args, {
-    dependsOn: [subnet],
-  })
+  const server = new hcloud.Server(name, args, { dependsOn: [subnet] })
+
   new hcloud.ServerNetwork(`${name}-net`, {
     serverId: server.id.apply(id => parseInt(id)),
     networkId: network.id.apply(id => parseInt(id)),
-    ip: `10.0.1.${10 + i}`,
+    ip: `10.0.1.${ipOffset + i}`,
   })
-  return server
+  return { server, knownHostEntry }
 }
 
-const createWorkerNode = (i: number, overrides?: Partial<hcloud.ServerArgs>) => {
-  const name = generateServerName(WORKER_GROUP_NAME, i)
-  const CUSTOM_SERVER_ARGS: Partial<hcloud.ServerArgs> = {
-    userData: CF_TUNNEL_CLOUD_CONFIG,
-    labels: { ...DEFAULT_SERVER_ARGS.labels, role: 'worker' },
-  }
-  const args = { ...DEFAULT_SERVER_ARGS, ...CUSTOM_SERVER_ARGS, ...overrides }
-  const server = new hcloud.Server(name, args, {
-    dependsOn: [subnet],
-  })
-  new hcloud.ServerNetwork(`${name}-net`, {
-    serverId: server.id.apply(id => parseInt(id)),
-    networkId: network.id.apply(id => parseInt(id)),
-    ip: `10.0.1.${20 + i}`,
-  })
-  return server
-}
+const ctrlNodes = enumerate(CONTROL_PLANE_NODE_COUNT).map(i =>
+  createNode(CONTROL_PLANE_GROUP_NAME, i, 10, 'control-plane')
+)
+const workerNodes = enumerate(WORKER_NODE_COUNT).map(i =>
+  createNode(WORKER_GROUP_NAME, i, 20, 'worker')
+)
 
-export const ctrls = enumerate(CONTROL_PLANE_NODE_COUNT).map(i => createControlPlane(i))
-export const workers = enumerate(WORKER_NODE_COUNT).map(i => createWorkerNode(i))
+const ctrls = ctrlNodes.map(node => node.server)
+const workers = workerNodes.map(node => node.server)
+
+export const knownHostsFile = pulumi
+  .all([...ctrlNodes, ...workerNodes].map(node => node.knownHostEntry))
+  .apply(hosts => hosts.join(''))

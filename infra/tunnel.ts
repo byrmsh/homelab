@@ -14,9 +14,9 @@ import {
   cfApiToken,
 } from './config'
 import { CfTunnelDrainer } from './tunnel-drainer'
-import { enumerate, generateServerName } from './utils'
+import { enumerate, generateServerName, indentOutputText } from './utils'
 
-export const tunnelSecret = new random.RandomPassword('tunnel-secret', {
+const tunnelSecret = new random.RandomPassword('tunnel-secret', {
   length: 64,
   special: false,
 }).result
@@ -29,52 +29,62 @@ export const infraTunnel = new cloudflare.ZeroTrustTunnelCloudflared('infra-tunn
 
 // Prevent runtime error about deleting a tunnel still in use
 export const tunnelDrainer = new CfTunnelDrainer(
-  'my-tunnel-drainer',
+  'infra-tunnel-drainer',
   { accountId: cfAccountId, tunnelId: infraTunnel.id, apiToken: cfApiToken },
   { dependsOn: [infraTunnel] }
 )
 
-export const infraTunnelToken = pulumi
+const infraTunnelToken = pulumi
   .all([cfAccountId, infraTunnel.id])
   .apply(([accountId, tunnelId]) =>
     cloudflare.getZeroTrustTunnelCloudflaredToken({ accountId, tunnelId })
   )
+  .apply(res => res.token)
 
-export const CF_TUNNEL_CLOUD_CONFIG = pulumi.interpolate`#cloud-config
+export const createCloudConfig = (
+  privateKey: pulumi.Input<string>,
+  publicKey: pulumi.Input<string>
+) => pulumi.interpolate`#cloud-config
 package_update: false
 package_upgrade: false
 packages:
   - curl
   - python3
+
+ssh_keys:
+  ed25519_public: ${publicKey}
+  ed25519_private: |
+    ${indentOutputText(privateKey, 4)}
+
 runcmd:
   # 1. Download Cloudflared (ARM64 specific)
   - curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb
   - dpkg -i cloudflared.deb
   # 2. Install System Service with Token
-  - cloudflared service install ${infraTunnelToken.token}
+  - cloudflared service install "${infraTunnelToken}"
+  - systemctl enable --now cloudflared
   # 3. Clean up
   - rm cloudflared.deb
   - echo "Cloudflared Interface Ready"
+  # 4. Restart SSH to pick up new keys
+  - systemctl restart ssh
 `
 
-export const team = new cloudflare.ZeroTrustOrganization('main-team', {
+const team = new cloudflare.ZeroTrustOrganization('main-team', {
   accountId: cfAccountId,
   name: cfztOrgName,
   authDomain: orgAuthDomain,
   autoRedirectToIdentity: true,
 })
 
-export const orgDomainAccessPolicy = new cloudflare.ZeroTrustAccessPolicy(
-  'org-domain-access-policy',
-  {
-    accountId: cfAccountId,
-    name: 'Allow Only Org Domain',
-    decision: 'allow',
-    includes: [{ emailDomain: { domain: domainName } }],
-  }
-)
+const orgDomainAccessPolicy = new cloudflare.ZeroTrustAccessPolicy('org-domain-access-policy', {
+  accountId: cfAccountId,
+  name: 'Allow Only Org Domain',
+  decision: 'allow',
+  includes: [{ emailDomain: { domain: domainName } }],
+})
 
-export const appLauncher = new cloudflare.ZeroTrustAccessApplication('app-launcher', {
+const appLauncher = new cloudflare.ZeroTrustAccessApplication('app-launcher', {
   accountId: cfAccountId,
   domain: orgAuthDomain,
   name: 'App Launcher',
