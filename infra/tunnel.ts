@@ -100,6 +100,8 @@ const createSshIngress = (prefix: string, i: number, ipOffset: number): _ConfigI
   const nameWithSsh = `${name}-ssh`
   const ip = `10.0.1.${ipOffset + i}`
 
+  // Cloudflare's standard Universal SSL certificates only cover one level of subdomain,
+  // so we need to use $host-ssh.domain.tld instead of $host.ssh.domain.tld or similar.
   new cloudflare.DnsRecord(`${name}-ssh-dns`, {
     zoneId: cfZoneId,
     name: nameWithSsh,
@@ -109,6 +111,9 @@ const createSshIngress = (prefix: string, i: number, ipOffset: number): _ConfigI
     ttl: 1,
   })
 
+  // HACK: also need to create a dedicated Zero Trust Access Application for each SSH hostname
+  // unless we use the paid feature https://developers.cloudflare.com/ssl/edge-certificates/advanced-certificate-manager/
+  // NOTE: current approach exposes predictable hostnames and may facilitate subdomain enumeration
   new cloudflare.ZeroTrustAccessApplication(`${name}-ssh-app`, {
     accountId: cfAccountId,
     name: `SSH Access - ${name}`,
