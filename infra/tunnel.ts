@@ -11,6 +11,8 @@ import {
   WORKER_GROUP_NAME,
   CONTROL_PLANE_NODE_COUNT,
   WORKER_NODE_COUNT,
+  CONTROL_PLANE_STARTING_IP_OFFSET,
+  WORKER_STARTING_IP_OFFSET,
   cfApiToken,
 } from './config'
 import { CfTunnelDrainer } from './tunnel-drainer'
@@ -131,8 +133,16 @@ const createSshIngress = (prefix: string, i: number, ipOffset: number): _ConfigI
 const createSshIngressGroup = (groupName: string, nodeCount: number, ipOffset: number) =>
   enumerate(nodeCount).map(i => createSshIngress(groupName, i, ipOffset))
 
-const ctrlIngresses = createSshIngressGroup(CONTROL_PLANE_GROUP_NAME, CONTROL_PLANE_NODE_COUNT, 10)
-const workerIngresses = createSshIngressGroup(WORKER_GROUP_NAME, WORKER_NODE_COUNT, 20)
+const ctrlIngresses = createSshIngressGroup(
+  CONTROL_PLANE_GROUP_NAME,
+  CONTROL_PLANE_NODE_COUNT,
+  CONTROL_PLANE_STARTING_IP_OFFSET
+)
+const workerIngresses = createSshIngressGroup(
+  WORKER_GROUP_NAME,
+  WORKER_NODE_COUNT,
+  WORKER_STARTING_IP_OFFSET
+)
 const tunnelIngresses = [...ctrlIngresses, ...workerIngresses, { service: 'http_status:404' }]
 
 new cloudflare.ZeroTrustTunnelCloudflaredConfig('infra-tunnel-config', {

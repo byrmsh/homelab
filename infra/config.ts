@@ -1,4 +1,6 @@
+import * as hcloud from '@pulumi/hcloud'
 import * as pulumi from '@pulumi/pulumi'
+import { mainKey, placementGroup, firewall } from '.'
 
 const config = new pulumi.Config()
 export const cfAccountId = config.requireSecret('cloudflareAccountId')
@@ -11,7 +13,9 @@ export const sshPublicKey = config.require('sshPublicKey')
 const cfConfig = new pulumi.Config('cloudflare')
 export const cfApiToken = cfConfig.requireSecret('apiToken')
 
-export const WORKER_GROUP_NAME = 'worker'
 export const CONTROL_PLANE_GROUP_NAME = 'ctrl'
-export const WORKER_NODE_COUNT = 2
-export const CONTROL_PLANE_NODE_COUNT = 3
+export const WORKER_GROUP_NAME = 'worker'
+export const CONTROL_PLANE_NODE_COUNT = 1
+export const WORKER_NODE_COUNT = 1
+export const CONTROL_PLANE_STARTING_IP_OFFSET = 10
+export const WORKER_STARTING_IP_OFFSET = 20

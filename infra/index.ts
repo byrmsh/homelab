@@ -9,6 +9,8 @@ import {
   CONTROL_PLANE_GROUP_NAME,
   CONTROL_PLANE_NODE_COUNT,
   WORKER_NODE_COUNT,
+  CONTROL_PLANE_STARTING_IP_OFFSET,
+  WORKER_STARTING_IP_OFFSET,
   domainName,
 } from './config'
 import { infraTunnel, createCloudConfig } from './tunnel'
@@ -30,7 +32,7 @@ const subnet = new hcloud.NetworkSubnet(
   { dependsOn: [network] }
 )
 
-const firewall = new hcloud.Firewall('k3s-firewall', {
+export const firewall = new hcloud.Firewall('k3s-firewall', {
   rules: [
     {
       direction: 'in',
@@ -70,24 +72,14 @@ const rootCname = new cloudflare.DnsRecord('root-cname', {
   ttl: 1,
 })
 
-const mainKey = new hcloud.SshKey('main-key', {
+export const mainKey = new hcloud.SshKey('main-key', {
   publicKey: sshPublicKey,
   name: 'admin-key',
 })
 
-const placementGroup = new hcloud.PlacementGroup('k3s-spread', {
+export const placementGroup = new hcloud.PlacementGroup('k3s-spread', {
   type: 'spread',
 })
-
-const DEFAULT_SERVER_ARGS: hcloud.ServerArgs = {
-  serverType: 'cax11',
-  image: 'ubuntu-24.04',
-  sshKeys: [mainKey.id],
-  placementGroupId: placementGroup.id.apply(id => parseInt(id)),
-  firewallIds: [firewall.id.apply(id => parseInt(id))],
-  publicNets: [{ ipv4Enabled: true, ipv6Enabled: true }],
-  labels: { cluster: 'k3s-main' },
-}
 
 const createNode = (
   groupName: string,
@@ -101,11 +93,17 @@ const createNode = (
   const sshHostKey = new tls.PrivateKey(`${name}-host-key`, { algorithm: 'ED25519' })
   const knownHostEntry = pulumi.interpolate`${hostname} ${sshHostKey.publicKeyOpenssh}`
 
-  const CUSTOM_SERVER_ARGS: Partial<hcloud.ServerArgs> = {
+  const args = {
+    serverType: 'cax21',
+    image: 'ubuntu-24.04',
+    sshKeys: [mainKey.id],
+    placementGroupId: placementGroup.id.apply(id => parseInt(id)),
+    firewallIds: [firewall.id.apply(id => parseInt(id))],
+    publicNets: [{ ipv4Enabled: true, ipv6Enabled: true }],
+    labels: { cluster: 'k3s-main', role },
     userData: createCloudConfig(sshHostKey.privateKeyOpenssh, sshHostKey.publicKeyOpenssh),
-    labels: { ...DEFAULT_SERVER_ARGS.labels, role },
+    ...overrides,
   }
-  const args = { ...DEFAULT_SERVER_ARGS, ...CUSTOM_SERVER_ARGS, ...overrides }
   const server = new hcloud.Server(name, args, { dependsOn: [subnet] })
 
   new hcloud.ServerNetwork(`${name}-net`, {
@@ -117,10 +115,10 @@ const createNode = (
 }
 
 const ctrlNodes = enumerate(CONTROL_PLANE_NODE_COUNT).map(i =>
-  createNode(CONTROL_PLANE_GROUP_NAME, i, 10, 'control-plane')
+  createNode(CONTROL_PLANE_GROUP_NAME, i, CONTROL_PLANE_STARTING_IP_OFFSET, 'control-plane')
 )
 const workerNodes = enumerate(WORKER_NODE_COUNT).map(i =>
-  createNode(WORKER_GROUP_NAME, i, 20, 'worker')
+  createNode(WORKER_GROUP_NAME, i, WORKER_STARTING_IP_OFFSET, 'worker')
 )
 
 const ctrls = ctrlNodes.map(node => node.server)
