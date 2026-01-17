@@ -2,6 +2,7 @@ import * as pulumi from '@pulumi/pulumi'
 import * as hcloud from '@pulumi/hcloud'
 import * as cloudflare from '@pulumi/cloudflare'
 import * as tls from '@pulumi/tls'
+import * as command from '@pulumi/command'
 import {
   cfZoneId,
   sshPublicKey,
@@ -32,7 +33,7 @@ const subnet = new hcloud.NetworkSubnet(
   { dependsOn: [network] },
 )
 
-export const firewall = new hcloud.Firewall('k3s-firewall', {
+const firewall = new hcloud.Firewall('k3s-firewall', {
   rules: [
     {
       direction: 'in',
@@ -72,17 +73,38 @@ const rootCname = new cloudflare.DnsRecord('root-cname', {
   ttl: 1,
 })
 
-export const mainKey = new hcloud.SshKey('main-key', {
+const mainKey = new hcloud.SshKey('main-key', {
   publicKey: sshPublicKey,
   name: 'admin-key',
 })
 
-export const placementGroup = new hcloud.PlacementGroup('k3s-spread', {
+const placementGroup = new hcloud.PlacementGroup('k3s-spread', {
   type: 'spread',
 })
 
-// Shared host key for all nodes to allow random load balancing via Cloudflared
-const clusterSshHostKey = new tls.PrivateKey('cluster-ssh-host-key', { algorithm: 'ED25519' })
+const sshCaKey = new tls.PrivateKey('ssh-ca-key', { algorithm: 'ED25519' })
+
+const signHostKey = (
+  name: string,
+  caKey: tls.PrivateKey,
+  hostPublicKey: pulumi.Input<string>,
+  principals: pulumi.Input<any>[],
+) => {
+  return new command.local.Command(`${name}-sign-cert`, {
+    create: pulumi.interpolate`
+      DIR=$(mktemp -d)
+      trap "rm -rf $DIR" EXIT
+      echo "${caKey.privateKeyOpenssh}" > $DIR/ca_key
+      echo "${caKey.publicKeyOpenssh}" > $DIR/ca_key.pub
+      chmod 600 $DIR/ca_key
+      echo "${hostPublicKey}" > $DIR/host_key.pub
+      # Sign with 10 year validity
+      ssh-keygen -s $DIR/ca_key -I "${name}" -h -n "${pulumi.all(principals).apply(p => p.join(','))}" -V +520w $DIR/host_key.pub > /dev/null
+      cat $DIR/host_key-cert.pub
+    `,
+    triggers: [hostPublicKey],
+  }).stdout
+}
 
 const createNode = (
   groupName: string,
@@ -94,6 +116,10 @@ const createNode = (
   const name = generateServerName(groupName, i)
   const ip = `10.0.1.${ipOffset + i}`
 
+  const nodeHostKey = new tls.PrivateKey(`${name}-host-key`, { algorithm: 'ED25519' })
+  const bastionHost = pulumi.interpolate`ssh.${domainName}`
+  const cert = signHostKey(name, sshCaKey, nodeHostKey.publicKeyOpenssh, [bastionHost, ip, name])
+
   const args = {
     serverType: 'cax21',
     image: 'ubuntu-24.04',
@@ -103,19 +129,20 @@ const createNode = (
     firewallIds: [firewall.id.apply(id => parseInt(id))],
     publicNets: [{ ipv4Enabled: true, ipv6Enabled: true }],
     labels: { cluster: 'k3s-main', role },
-    userData: createCloudConfig(
-      clusterSshHostKey.privateKeyOpenssh,
-      clusterSshHostKey.publicKeyOpenssh,
-    ),
+    userData: createCloudConfig(nodeHostKey.privateKeyOpenssh, nodeHostKey.publicKeyOpenssh, cert),
     ...overrides,
   }
   const server = new hcloud.Server(name, args, { dependsOn: [subnet] })
 
-  new hcloud.ServerNetwork(`${name}-net`, {
-    serverId: server.id.apply(id => parseInt(id)),
-    networkId: network.id.apply(id => parseInt(id)),
-    ip,
-  })
+  new hcloud.ServerNetwork(
+    `${name}-net`,
+    {
+      serverId: server.id.apply(id => parseInt(id)),
+      networkId: network.id.apply(id => parseInt(id)),
+      ip,
+    },
+    { deleteBeforeReplace: true }, // prevent "IP not available" errors
+  )
   return { server, ip }
 }
 
@@ -130,14 +157,5 @@ const ctrls = ctrlNodes.map(node => node.server)
 const workers = workerNodes.map(node => node.server)
 
 export const knownHostsFile = pulumi
-  .all([clusterSshHostKey.publicKeyOpenssh, domainName])
-  .apply(([key, domain]) => {
-    const bastion = `ssh.${domain} ${key}\n`
-    const ipsFor = (count: number, offset: number) =>
-      enumerate(count).map(i => `10.0.1.${offset + i} ${key}\n`)
-    return [
-      bastion,
-      ...ipsFor(CONTROL_PLANE_NODE_COUNT, CONTROL_PLANE_STARTING_IP_OFFSET),
-      ...ipsFor(WORKER_NODE_COUNT, WORKER_STARTING_IP_OFFSET),
-    ].join('')
-  })
+  .all([sshCaKey.publicKeyOpenssh, domainName])
+  .apply(([key, domain]) => `@cert-authority *.${domain},ssh.${domain},10.0.1.* ${key.trim()}\n`)

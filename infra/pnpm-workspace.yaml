@@ -1,2 +1,5 @@
+ignoredBuiltDependencies:
+  - '@pulumi/command'
+
 onlyBuiltDependencies:
   - protobufjs

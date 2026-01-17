@@ -11,6 +11,9 @@ importers:
       '@pulumi/cloudflare':
         specifier: ^6.12.0
         version: 6.12.0(typescript@5.9.3)
+      '@pulumi/command':
+        specifier: ^1.1.3
+        version: 1.1.3(typescript@5.9.3)
       '@pulumi/hcloud':
         specifier: ^1.29.0
         version: 1.29.0(typescript@5.9.3)
@@ -226,6 +229,9 @@ packages:
 
   '@pulumi/cloudflare@6.12.0':
     resolution: {integrity: sha512-Evhj9u+ZVCO6Cu9+xon4F3dY4RA7U4ZTWc19MJAIa5GgLeG8X0C84iyo5aruZf2nK7nfJ2d47lyRSaXPBHOzjw==}
+
+  '@pulumi/command@1.1.3':
+    resolution: {integrity: sha512-eBzGE/BQlxMNcxrrA62N4cLaHdL0xDSRACXxB0Hjc4rJG60vhpDVO130xxb4x3cZ7HT1kvjS4KuuoH8R5JRbIQ==}
 
   '@pulumi/hcloud@1.29.0':
     resolution: {integrity: sha512-u7LsWA28jEdhSodhOzfTeZbRgTevSnJTp6JH41e34otzq1lB8TttdHlgafvFDNTvpCffjjRyiedN2nQgXcf3JQ==}
@@ -1350,6 +1356,15 @@ snapshots:
   '@protobufjs/utf8@1.1.0': {}
 
   '@pulumi/cloudflare@6.12.0(typescript@5.9.3)':
+    dependencies:
+      '@pulumi/pulumi': 3.215.0(typescript@5.9.3)
+    transitivePeerDependencies:
+      - bluebird
+      - supports-color
+      - ts-node
+      - typescript
+
+  '@pulumi/command@1.1.3(typescript@5.9.3)':
     dependencies:
       '@pulumi/pulumi': 3.215.0(typescript@5.9.3)
     transitivePeerDependencies:

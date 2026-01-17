@@ -12,7 +12,7 @@ else
 fi
 
 echo ""
-echo "Add the following to your ~/.ssh/config:"
+echo "Add the following to your ~/.ssh/config to use the Certificate Authority:"
 
 DOMAIN=$(pulumi config get domainName)
 echo "Host ssh.$DOMAIN"
@@ -20,6 +20,7 @@ echo "  User root"
 echo "  IdentityFile ~/.ssh/id_ed25519 # or your preferred key"
 echo "  ProxyCommand cloudflared --edge-ip-version 4 access ssh --hostname %h"
 echo "  StrictHostKeyChecking yes"
+echo "  # Trust the CA provided for this domain"
 echo "  UserKnownHostsFile $KNOWN_HOSTS_FILE"
 
 echo ""
@@ -28,4 +29,5 @@ echo "  ProxyJump ssh.$DOMAIN"
 echo "  User root"
 echo "  IdentityFile ~/.ssh/id_ed25519 # or your preferred key"
 echo "  StrictHostKeyChecking yes"
+echo "  # Trust the CA provided for these IPs"
 echo "  UserKnownHostsFile $KNOWN_HOSTS_FILE"
