@@ -1,0 +1,40 @@
+#cloud-config
+package_update: false
+package_upgrade: false
+packages:
+  - curl
+  - python3
+
+ssh_deletekeys: false
+
+write_files:
+  - path: /etc/ssh/ssh_host_ed25519_key
+    encoding: b64
+    content: '[[SSH_HOST_KEY_B64]]'
+    permissions: '0600'
+    owner: root:root
+  - path: /etc/ssh/ssh_host_ed25519_key.pub
+    encoding: b64
+    content: '[[SSH_HOST_PUB_B64]]'
+    permissions: '0644'
+    owner: root:root
+  - path: /etc/ssh/ssh_host_ed25519_key-cert.pub
+    encoding: b64
+    content: '[[SSH_HOST_CERT_B64]]'
+    permissions: '0644'
+    owner: root:root
+  - path: /etc/ssh/sshd_config.d/pulumi-host-keys.conf
+    permissions: '0644'
+    owner: root:root
+    content: |
+      HostKey /etc/ssh/ssh_host_ed25519_key
+      HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub
+
+runcmd:
+  - curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb
+  - dpkg -i cloudflared.deb
+  - cloudflared service install [[INFRA_TUNNEL_TOKEN]]
+  - systemctl enable --now cloudflared
+  - systemctl restart ssh
+  - rm cloudflared.deb
+  - echo "SSH and Tunnel Ready"
