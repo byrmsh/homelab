@@ -1,22 +1,9 @@
 import * as pulumi from '@pulumi/pulumi'
 import * as cloudflare from '@pulumi/cloudflare'
 import * as random from '@pulumi/random'
-import {
-  cfAccountId,
-  cfztOrgName,
-  domainName,
-  orgAuthDomain,
-  cfZoneId,
-  CONTROL_PLANE_GROUP_NAME,
-  WORKER_GROUP_NAME,
-  CONTROL_PLANE_NODE_COUNT,
-  WORKER_NODE_COUNT,
-  CONTROL_PLANE_STARTING_IP_OFFSET,
-  WORKER_STARTING_IP_OFFSET,
-  cfApiToken,
-} from './config'
+import { cfAccountId, cfztOrgName, domainName, orgAuthDomain, cfZoneId, cfApiToken } from './config'
 import { CfTunnelDrainer } from './tunnel-drainer'
-import { enumerate, generateServerName, indentOutputText } from './utils'
+import { indentOutputText } from './utils'
 
 const tunnelSecret = new random.RandomPassword('tunnel-secret', {
   length: 64,
@@ -33,19 +20,19 @@ export const infraTunnel = new cloudflare.ZeroTrustTunnelCloudflared('infra-tunn
 export const tunnelDrainer = new CfTunnelDrainer(
   'infra-tunnel-drainer',
   { accountId: cfAccountId, tunnelId: infraTunnel.id, apiToken: cfApiToken },
-  { dependsOn: [infraTunnel] }
+  { dependsOn: [infraTunnel] },
 )
 
 const infraTunnelToken = pulumi
   .all([cfAccountId, infraTunnel.id])
   .apply(([accountId, tunnelId]) =>
-    cloudflare.getZeroTrustTunnelCloudflaredToken({ accountId, tunnelId })
+    cloudflare.getZeroTrustTunnelCloudflaredToken({ accountId, tunnelId }),
   )
   .apply(res => res.token)
 
 export const createCloudConfig = (
   privateKey: pulumi.Input<string>,
-  publicKey: pulumi.Input<string>
+  publicKey: pulumi.Input<string>,
 ) => pulumi.interpolate`#cloud-config
 package_update: false
 package_upgrade: false
@@ -95,55 +82,32 @@ const appLauncher = new cloudflare.ZeroTrustAccessApplication('app-launcher', {
   policies: [{ id: orgDomainAccessPolicy.id }],
 })
 
-type _ConfigIngress = cloudflare.types.input.ZeroTrustTunnelCloudflaredConfigConfigIngress
+const bastionHostname = pulumi.interpolate`ssh.${domainName}`
 
-const createSshIngress = (prefix: string, i: number, ipOffset: number): _ConfigIngress => {
-  const name = generateServerName(prefix, i)
-  const nameWithSsh = `${name}-ssh`
-  const ip = `10.0.1.${ipOffset + i}`
+new cloudflare.DnsRecord('bastion-ssh-dns', {
+  zoneId: cfZoneId,
+  name: 'ssh',
+  type: 'CNAME',
+  content: pulumi.interpolate`${infraTunnel.id}.cfargotunnel.com`,
+  proxied: true,
+  ttl: 1,
+})
 
-  // Cloudflare's standard Universal SSL certificates only cover one level of subdomain,
-  // so we need to use $host-ssh.domain.tld instead of $host.ssh.domain.tld or similar.
-  new cloudflare.DnsRecord(`${name}-ssh-dns`, {
-    zoneId: cfZoneId,
-    name: nameWithSsh,
-    type: 'CNAME',
-    content: pulumi.interpolate`${infraTunnel.id}.cfargotunnel.com`,
-    proxied: true,
-    ttl: 1,
-  })
+new cloudflare.ZeroTrustAccessApplication('bastion-ssh-app', {
+  accountId: cfAccountId,
+  name: 'SSH Bastion Access',
+  domain: bastionHostname,
+  type: 'ssh',
+  policies: [{ id: orgDomainAccessPolicy.id }],
+})
 
-  // HACK: also need to create a dedicated Zero Trust Access Application for each SSH hostname
-  // unless we use the paid feature https://developers.cloudflare.com/ssl/edge-certificates/advanced-certificate-manager/
-  // NOTE: current approach exposes predictable hostnames and may facilitate subdomain enumeration
-  new cloudflare.ZeroTrustAccessApplication(`${name}-ssh-app`, {
-    accountId: cfAccountId,
-    name: `SSH Access - ${name}`,
-    domain: pulumi.interpolate`${nameWithSsh}.${domainName}`,
-    type: 'ssh',
-    policies: [{ id: orgDomainAccessPolicy.id }],
-  })
-
-  return {
-    hostname: pulumi.interpolate`${nameWithSsh}.${domainName}`,
-    service: `ssh://${ip}:22`,
-  }
-}
-
-const createSshIngressGroup = (groupName: string, nodeCount: number, ipOffset: number) =>
-  enumerate(nodeCount).map(i => createSshIngress(groupName, i, ipOffset))
-
-const ctrlIngresses = createSshIngressGroup(
-  CONTROL_PLANE_GROUP_NAME,
-  CONTROL_PLANE_NODE_COUNT,
-  CONTROL_PLANE_STARTING_IP_OFFSET
-)
-const workerIngresses = createSshIngressGroup(
-  WORKER_GROUP_NAME,
-  WORKER_NODE_COUNT,
-  WORKER_STARTING_IP_OFFSET
-)
-const tunnelIngresses = [...ctrlIngresses, ...workerIngresses, { service: 'http_status:404' }]
+const tunnelIngresses: cloudflare.types.input.ZeroTrustTunnelCloudflaredConfigConfigIngress[] = [
+  {
+    hostname: bastionHostname,
+    service: 'ssh://localhost:22',
+  },
+  { service: 'http_status:404' },
+]
 
 new cloudflare.ZeroTrustTunnelCloudflaredConfig('infra-tunnel-config', {
   accountId: cfAccountId,

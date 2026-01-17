@@ -13,9 +13,19 @@ fi
 
 echo ""
 echo "Add the following to your ~/.ssh/config:"
-echo "Host *-ssh.$(pulumi config get domainName)"
+
+DOMAIN=$(pulumi config get domainName)
+echo "Host ssh.$DOMAIN"
 echo "  User root"
 echo "  IdentityFile ~/.ssh/id_ed25519 # or your preferred key"
-echo "  ProxyCommand cloudflared access ssh --hostname %h"
+echo "  ProxyCommand cloudflared --edge-ip-version 4 access ssh --hostname %h"
+echo "  StrictHostKeyChecking yes"
+echo "  UserKnownHostsFile $KNOWN_HOSTS_FILE"
+
+echo ""
+echo "Host 10.0.1.*"
+echo "  ProxyJump ssh.$DOMAIN"
+echo "  User root"
+echo "  IdentityFile ~/.ssh/id_ed25519 # or your preferred key"
 echo "  StrictHostKeyChecking yes"
 echo "  UserKnownHostsFile $KNOWN_HOSTS_FILE"
